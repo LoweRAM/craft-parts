@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   build-container:
-    name: Build container (${{ matrix.distro }})
+    name: Build container (${{ matrix.distro }} - ${{ matrix.flavor }})
     runs-on: ubuntu-24.04
     permissions:
       actions: write
@@ -30,15 +30,39 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - distro: focal
-            image: ubuntu:20.04
+          # noble (24.04)
+          - distro: noble
+            flavor: other
+            image: ubuntu:24.04
+            setup_vars: "NO_JAVA=1 NO_PYTHON=1"
+          - distro: noble
+            flavor: python
+            image: ubuntu:24.04
+            setup_vars: "NO_JAVA=1 NO_PLUGIN=1"
+          - distro: noble
+            flavor: java
+            image: ubuntu:24.04
+            setup_vars: "NO_PYTHON=1 NO_PLUGIN=1"
+
+          # jammy (22.04)
+          - distro: jammy
+            flavor: other
+            image: ubuntu:22.04
             setup_vars: "NO_JAVA=1 NO_PYTHON=1"
           - distro: jammy
+            flavor: python
             image: ubuntu:22.04
-            setup_vars: ""
-          - distro: noble
-            image: ubuntu:24.04
-            setup_vars: ""
+            setup_vars: "NO_JAVA=1 NO_PLUGIN=1"
+          - distro: jammy
+            flavor: java
+            image: ubuntu:22.04
+            setup_vars: "NO_PYTHON=1 NO_PLUGIN=1"
+
+          # focal (20.04)
+          - distro: focal
+            flavor: other
+            image: ubuntu:20.04
+            setup_vars: "NO_JAVA=1 NO_PYTHON=1"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,7 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          prefix="lxd-container-${{ matrix.distro }}-${{ runner.arch }}-"
+          prefix="lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-"
           echo "Checking cache for: $prefix"
 
           latest_cache=$(gh cache list --key "$prefix" --sort created_at --order desc --json key,createdAt --jq '.[0] // empty' 2>/dev/null || true)
@@ -141,13 +165,13 @@ jobs:
         run: |
           mkdir -p "${{ runner.temp }}/lxd-cache"
           lxc stop test-container
-          lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz"
+          lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz"
 
       - name: Upload container to cache
         if: steps.check-cache.outputs.cache-valid != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz
           key: ${{ steps.check-cache.outputs.new-key }}
 
   test-fast:
@@ -171,10 +195,10 @@ jobs:
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz
+          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
@@ -184,7 +208,7 @@ jobs:
 
       - name: Import and start container
         run: |
-          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz" test-container
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz" test-container
           lxc config set test-container security.nesting true || true
           lxc config set test-container security.privileged true || true
           lxc start test-container
@@ -212,66 +236,81 @@ jobs:
         include:
           # noble (24.04)
           - distro: noble
+            flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
             sudo: false
           - distro: noble
+            flavor: other
             suite: flaky
             markers: "flaky"
             sudo: false
           - distro: noble
+            flavor: java
             suite: java
             markers: "java"
             sudo: false
           - distro: noble
+            flavor: python
             suite: python
             markers: "python"
             sudo: false
           - distro: noble
+            flavor: other
             suite: other-plugins
             markers: "plugin"
             sudo: false
           - distro: noble
+            flavor: other
             suite: requires-root
             markers: "requires_root"
             sudo: true
 
           # jammy (22.04)
           - distro: jammy
+            flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
             sudo: false
           - distro: jammy
+            flavor: other
             suite: flaky
             markers: "flaky"
             sudo: false
           - distro: jammy
+            flavor: java
             suite: java
             markers: "java"
             sudo: false
           - distro: jammy
+            flavor: python
             suite: python
             markers: "python"
             sudo: false
           - distro: jammy
+            flavor: other
             suite: other-plugins
             markers: "plugin"
             sudo: false
 
           # focal (20.04)
           - distro: focal
+            flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
             sudo: false
           - distro: focal
+            flavor: other
             suite: flaky
             markers: "flaky"
             sudo: false
           - distro: focal
+            flavor: other
             suite: other-plugins
             markers: "plugin"
             sudo: false
           - distro: focal
+            flavor: other
             suite: requires-root
             markers: "requires_root"
             sudo: true
@@ -285,10 +324,10 @@ jobs:
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz
+          key: lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+            lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
@@ -298,7 +337,7 @@ jobs:
 
       - name: Import and start container
         run: |
-          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz" test-container
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz" test-container
           lxc config set test-container security.nesting true || true
           lxc config set test-container security.privileged true || true
           lxc start test-container
