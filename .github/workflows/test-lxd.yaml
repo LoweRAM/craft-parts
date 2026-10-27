@@ -99,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          prefix="lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-"
+          prefix="lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-"
           echo "Checking cache for: $prefix"
 
           latest_cache=$(gh cache list --key "$prefix" --sort created_at --order desc --json key,createdAt --jq '.[0] // empty' 2>/dev/null || true)
@@ -220,9 +220,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz
-          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
@@ -233,8 +233,6 @@ jobs:
       - name: Import and start container
         run: |
           lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz" test-container
-          lxc config set test-container security.nesting true || true
-          lxc config set test-container security.privileged true || true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
 
@@ -364,9 +362,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-
+          key: lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-
+            lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
@@ -430,9 +428,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz
-          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
