@@ -8,6 +8,7 @@ on:
       - "hotfix/*"
       - "release/*"
       - "renovate/*"
+      - "work/*"
   pull_request:
   workflow_dispatch:
 
