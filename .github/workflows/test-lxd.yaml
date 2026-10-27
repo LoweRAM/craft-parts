@@ -85,8 +85,10 @@ jobs:
             sleep 2
           done
 
-          # Ensure /snap/bin is in PATH for non-login shells
+          # Ensure /snap/bin is in PATH and CI environment is set for all shells
           lxc exec test-container -- sh -c "grep -q '/snap/bin' /etc/environment || echo 'PATH=/snap/bin:\$PATH' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'CI=true' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'DEBIAN_FRONTEND=noninteractive' >> /etc/environment"
 
           # Copy repository into container
           lxc exec test-container -- sudo -i -u ubuntu mkdir -p /home/ubuntu/craft-parts
@@ -94,7 +96,7 @@ jobs:
           lxc exec test-container -- sudo -i -u ubuntu git config --global --add safe.directory /home/ubuntu/craft-parts
 
           # Run make setup
-          lxc exec test-container -- sudo -i -u ubuntu env ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
+          lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
 
           # Ensure uv is easily discoverable on all paths
           lxc exec test-container -- sh -c 'ln -sf /snap/bin/uv /usr/local/bin/uv || true'
@@ -155,8 +157,8 @@ jobs:
 
       - name: Run fast tests
         run: |
-          lxc exec test-container -- sudo -i -u ubuntu make -C /home/ubuntu/craft-parts test-fast
-          lxc exec test-container -- sudo -i -u ubuntu sudo env "PATH=/snap/bin:$PATH" uv run --project /home/ubuntu/craft-parts pytest -m 'not slow and requires_root' /home/ubuntu/craft-parts
+          lxc exec test-container -- sudo -i -u ubuntu env CI=true make -C /home/ubuntu/craft-parts test-fast
+          lxc exec test-container -- sudo -i -u ubuntu sudo env CI=true "PATH=/snap/bin:$PATH" uv run --project /home/ubuntu/craft-parts pytest -m 'not slow and requires_root' /home/ubuntu/craft-parts
 
   test-slow:
     name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
@@ -270,7 +272,7 @@ jobs:
       - name: Run slow tests
         run: |
           if [ "${{ matrix.sudo }}" = "true" ]; then
-            lxc exec test-container -- sudo -i -u ubuntu sudo env "PATH=/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+            lxc exec test-container -- sudo -i -u ubuntu sudo env CI=true "PATH=/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
           else
-            lxc exec test-container -- sudo -i -u ubuntu make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+            lxc exec test-container -- sudo -i -u ubuntu env CI=true make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
           fi
