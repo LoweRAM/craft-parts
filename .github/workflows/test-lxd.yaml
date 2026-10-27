@@ -1,0 +1,275 @@
+name: Test (LXD)
+
+on:
+  push:
+    branches:
+      - "main"
+      - "feature/*"
+      - "hotfix/*"
+      - "release/*"
+      - "renovate/*"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-container:
+    name: Build container (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: focal
+            image: ubuntu:20.04
+            setup_vars: "NO_JAVA=1 NO_PYTHON=1"
+          - distro: jammy
+            image: ubuntu:22.04
+            setup_vars: ""
+          - distro: noble
+            image: ubuntu:24.04
+            setup_vars: ""
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check container cache
+        id: cache-container
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
+          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+
+      - name: Install LXD
+        if: steps.cache-container.outputs.cache-hit != 'true'
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/candidate
+
+      - name: Spin up LXD container and set up tests
+        if: steps.cache-container.outputs.cache-hit != 'true'
+        run: |
+          # Launch container with nesting enabled for snapd
+          lxc launch ${{ matrix.image }} test-container -c security.nesting=true
+
+          # Wait for container systemd and networking to be fully ready
+          lxc exec test-container -- cloud-init status --wait || true
+          lxc exec test-container -- systemctl is-system-running --wait || true
+
+          # Ensure user ubuntu exists with passwordless sudo
+          lxc exec test-container -- sh -c 'id -u ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 ubuntu'
+          lxc exec test-container -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu'
+
+          # Install base dependencies needed to run make
+          lxc exec test-container -- sudo apt-get update
+          lxc exec test-container -- sudo apt-get install -y --no-install-recommends git make curl ca-certificates
+
+          # Wait for snapd to be ready
+          for _ in $(seq 1 30); do
+            if lxc exec test-container -- snap version >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+
+          # Ensure /snap/bin is in PATH for non-login shells
+          lxc exec test-container -- sh -c "grep -q '/snap/bin' /etc/environment || echo 'PATH=/snap/bin:\$PATH' >> /etc/environment"
+
+          # Copy repository into container
+          lxc exec test-container -- sudo -i -u ubuntu mkdir -p /home/ubuntu/craft-parts
+          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- sudo -i -u ubuntu git config --global --add safe.directory /home/ubuntu/craft-parts
+
+          # Run make setup
+          lxc exec test-container -- sudo -i -u ubuntu env ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
+
+          # Ensure uv is easily discoverable on all paths
+          lxc exec test-container -- sh -c 'ln -sf /snap/bin/uv /usr/local/bin/uv || true'
+
+      - name: Export container
+        if: steps.cache-container.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ runner.temp }}/lxd-cache"
+          lxc stop test-container
+          lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz"
+
+      - name: Upload container to cache
+        if: steps.cache-container.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
+          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+
+  test-fast:
+    name: Fast tests (${{ matrix.distro }})
+    needs: build-container
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [focal, jammy, noble]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore container from cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
+          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+          fail-on-cache-miss: true
+
+      - name: Install LXD
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/candidate
+
+      - name: Import and start container
+        run: |
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz" test-container
+          lxc start test-container
+          lxc exec test-container -- systemctl is-system-running --wait || true
+
+          # Sync latest code into container
+          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- sudo -i -u ubuntu git config --global --add safe.directory /home/ubuntu/craft-parts
+
+      - name: Run fast tests
+        run: |
+          lxc exec test-container -- sudo -i -u ubuntu make -C /home/ubuntu/craft-parts test-fast
+          lxc exec test-container -- sudo -i -u ubuntu sudo env "PATH=/snap/bin:$PATH" uv run --project /home/ubuntu/craft-parts pytest -m 'not slow and requires_root' /home/ubuntu/craft-parts
+
+  test-slow:
+    name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
+    needs: build-container
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # noble (24.04)
+          - distro: noble
+            suite: common
+            markers: "not java and not python and not plugin and not flaky and not requires_root"
+            sudo: false
+          - distro: noble
+            suite: flaky
+            markers: "flaky"
+            sudo: false
+          - distro: noble
+            suite: java
+            markers: "java"
+            sudo: false
+          - distro: noble
+            suite: python
+            markers: "python"
+            sudo: false
+          - distro: noble
+            suite: other-plugins
+            markers: "plugin"
+            sudo: false
+          - distro: noble
+            suite: requires-root
+            markers: "requires_root"
+            sudo: true
+
+          # jammy (22.04)
+          - distro: jammy
+            suite: common
+            markers: "not java and not python and not plugin and not flaky and not requires_root"
+            sudo: false
+          - distro: jammy
+            suite: flaky
+            markers: "flaky"
+            sudo: false
+          - distro: jammy
+            suite: java
+            markers: "java"
+            sudo: false
+          - distro: jammy
+            suite: python
+            markers: "python"
+            sudo: false
+          - distro: jammy
+            suite: other-plugins
+            markers: "plugin"
+            sudo: false
+          - distro: jammy
+            suite: requires-root
+            markers: "requires_root"
+            sudo: true
+
+          # focal (20.04)
+          - distro: focal
+            suite: common
+            markers: "not java and not python and not plugin and not flaky and not requires_root"
+            sudo: false
+          - distro: focal
+            suite: flaky
+            markers: "flaky"
+            sudo: false
+          - distro: focal
+            suite: other-plugins
+            markers: "plugin"
+            sudo: false
+          - distro: focal
+            suite: requires-root
+            markers: "requires_root"
+            sudo: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore container from cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
+          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+          fail-on-cache-miss: true
+
+      - name: Install LXD
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/candidate
+
+      - name: Import and start container
+        run: |
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz" test-container
+          lxc start test-container
+          lxc exec test-container -- systemctl is-system-running --wait || true
+
+          # Sync latest code into container
+          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- sudo -i -u ubuntu git config --global --add safe.directory /home/ubuntu/craft-parts
+
+      - name: Run slow tests
+        run: |
+          if [ "${{ matrix.sudo }}" = "true" ]; then
+            lxc exec test-container -- sudo -i -u ubuntu sudo env "PATH=/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          else
+            lxc exec test-container -- sudo -i -u ubuntu make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          fi
