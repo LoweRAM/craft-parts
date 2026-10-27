@@ -11,6 +11,9 @@ on:
       - "work/*"
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -30,39 +33,60 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # noble (24.04)
+          # noble (24.04) - Ubuntu release Python 3.12
           - distro: noble
             flavor: other
-            image: ubuntu:24.04
+            image: ubuntu-minimal:24.04
             setup_vars: "NO_JAVA=1 NO_PYTHON=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: python
-            image: ubuntu:24.04
+            image: ubuntu-minimal:24.04
             setup_vars: "NO_JAVA=1 NO_PLUGIN=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: java
-            image: ubuntu:24.04
+            image: ubuntu-minimal:24.04
             setup_vars: "NO_PYTHON=1 NO_PLUGIN=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
 
-          # jammy (22.04)
+          # jammy (22.04) - Ubuntu release Python 3.10
           - distro: jammy
             flavor: other
-            image: ubuntu:22.04
+            image: ubuntu-minimal:22.04
             setup_vars: "NO_JAVA=1 NO_PYTHON=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: python
-            image: ubuntu:22.04
+            image: ubuntu-minimal:22.04
             setup_vars: "NO_JAVA=1 NO_PLUGIN=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: java
-            image: ubuntu:22.04
+            image: ubuntu-minimal:22.04
             setup_vars: "NO_PYTHON=1 NO_PLUGIN=1"
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
 
-          # focal (20.04)
+          # focal (20.04) - UV-provided Python 3.10
           - distro: focal
             flavor: other
-            image: ubuntu:20.04
+            image: ubuntu-minimal:20.04
             setup_vars: "NO_JAVA=1 NO_PYTHON=1"
+            python: "3.10"
+            uv_downloads: "auto"
+            uv_preference: "managed"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,8 +137,8 @@ jobs:
       - name: Spin up LXD container and set up tests
         if: steps.check-cache.outputs.cache-valid != 'true'
         run: |
-          # Launch container with nesting and privilege enabled for snapd and special device files
-          lxc launch ${{ matrix.image }} test-container -c security.nesting=true -c security.privileged=true
+          # Launch default LXD container
+          lxc launch ${{ matrix.image }} test-container
 
           # Wait for container systemd and networking to be fully ready
           lxc exec test-container -- cloud-init status --wait || true
@@ -124,28 +148,16 @@ jobs:
           lxc exec test-container -- sh -c 'id -u ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 ubuntu'
           lxc exec test-container -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu'
 
-          # Install base dependencies needed to run make and plugins
-          lxc exec test-container -- sudo apt-get update
-          lxc exec test-container -- sudo apt-get install -y --no-install-recommends git make curl ca-certificates python3-pip npm node-semver
+          # Install base dependencies needed to run make, python, and plugins
+          lxc exec test-container -- apt-get update
+          lxc exec test-container -- apt-get install -y --no-install-recommends sudo git make curl ca-certificates python3 python3-pip python3-venv python3-dev nodejs npm node-semver
 
-          # Wait for snapd to be ready
-          for _ in $(seq 1 30); do
-            if lxc exec test-container -- snap version >/dev/null 2>&1; then
-              break
-            fi
-            sleep 2
-          done
-
-          # Install node snap for npm plugin integration tests
-          lxc exec test-container -- sudo snap install --classic node
-
-          # Symlink snap binaries to /usr/local/bin to be discovered by subprocesses
-          lxc exec test-container -- sh -c "for bin in /snap/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
-
-          # Ensure /snap/bin is in PATH and CI environment is set for all shells
-          lxc exec test-container -- sh -c "grep -q '/snap/bin' /etc/environment || echo 'PATH=/snap/bin:\$PATH' >> /etc/environment"
+          # Configure environment: Python version settings
           lxc exec test-container -- sh -c "echo 'CI=true' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'DEBIAN_FRONTEND=noninteractive' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'UV_PYTHON=${{ matrix.python }}' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'UV_PYTHON_DOWNLOADS=${{ matrix.uv_downloads }}' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'UV_PYTHON_PREFERENCE=${{ matrix.uv_preference }}' >> /etc/environment"
 
           # Trust repository paths globally for all users
           lxc exec test-container -- sudo git config --system --add safe.directory '*'
@@ -154,8 +166,8 @@ jobs:
           lxc exec test-container -- sudo -i -u ubuntu mkdir -p /home/ubuntu/craft-parts
           tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
 
-          # Run make setup
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
+          # Run make setup using configured Python
+          lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
 
           # Ensure uv is easily discoverable on all paths
           lxc exec test-container -- sh -c 'ln -sf /snap/bin/uv /usr/local/bin/uv || true'
@@ -184,7 +196,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [focal, jammy, noble]
+        include:
+          - distro: focal
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
+          - distro: jammy
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
+          - distro: noble
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -218,10 +242,9 @@ jobs:
           tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
           lxc exec test-container -- sudo git config --system --add safe.directory '*'
 
-      - name: Run fast tests
+      - name: Run fast tests (non-root)
         run: |
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true make -C /home/ubuntu/craft-parts test-fast
-          lxc exec test-container -- sudo -i -u ubuntu sudo env CI=true "PATH=/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu/craft-parts -- env CI=true HOME=/home/ubuntu UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-fast
 
   test-slow:
     name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
@@ -234,86 +257,102 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # noble (24.04)
+          # noble (24.04) - Ubuntu release Python 3.12
           - distro: noble
             flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: other
             suite: flaky
             markers: "flaky"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: java
             suite: java
             markers: "java"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: python
             suite: python
             markers: "python"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: noble
             flavor: other
             suite: other-plugins
             markers: "plugin"
-            sudo: false
-          - distro: noble
-            flavor: other
-            suite: requires-root
-            markers: "requires_root"
-            sudo: true
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
 
-          # jammy (22.04)
+          # jammy (22.04) - Ubuntu release Python 3.10
           - distro: jammy
             flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: other
             suite: flaky
             markers: "flaky"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: java
             suite: java
             markers: "java"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: python
             suite: python
             markers: "python"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
           - distro: jammy
             flavor: other
             suite: other-plugins
             markers: "plugin"
-            sudo: false
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
 
-          # focal (20.04)
+          # focal (20.04) - UV-provided Python 3.10
           - distro: focal
             flavor: other
             suite: common
             markers: "not java and not python and not plugin and not flaky and not requires_root"
-            sudo: false
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
           - distro: focal
             flavor: other
             suite: flaky
             markers: "flaky"
-            sudo: false
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
           - distro: focal
             flavor: other
             suite: other-plugins
             markers: "plugin"
-            sudo: false
-          - distro: focal
-            flavor: other
-            suite: requires-root
-            markers: "requires_root"
-            sudo: true
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -338,8 +377,6 @@ jobs:
       - name: Import and start container
         run: |
           lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.gz" test-container
-          lxc config set test-container security.nesting true || true
-          lxc config set test-container security.privileged true || true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
 
@@ -347,10 +384,76 @@ jobs:
           tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
           lxc exec test-container -- sudo git config --system --add safe.directory '*'
 
-      - name: Run slow tests
+      - name: Run slow tests (non-root)
         run: |
-          if [ "${{ matrix.sudo }}" = "true" ]; then
-            lxc exec test-container -- sudo -i -u ubuntu sudo env CI=true "PATH=/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu/craft-parts -- env CI=true HOME=/home/ubuntu UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+
+  test-requires-root:
+    name: Requires root (${{ matrix.distro }} - ${{ matrix.speed }})
+    needs: build-container
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: noble
+            speed: fast
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
+          - distro: noble
+            speed: slow
+            python: "/usr/bin/python3"
+            uv_downloads: "never"
+            uv_preference: "only-system"
+          - distro: focal
+            speed: fast
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
+          - distro: focal
+            speed: slow
+            python: "3.10"
+            uv_downloads: "never"
+            uv_preference: "managed"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore container from cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz
+          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+          restore-keys: |
+            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-
+          fail-on-cache-miss: true
+
+      - name: Install LXD
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/candidate
+
+      - name: Import and start container
+        run: |
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz" test-container
+          lxc start test-container
+          lxc exec test-container -- systemctl is-system-running --wait || true
+
+          # Sync latest code into container
+          tar -cf - . | lxc exec test-container -- tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- git config --system --add safe.directory '*'
+
+      - name: Run root tests
+        run: |
+          if [ "${{ matrix.speed }}" = "fast" ]; then
+            lxc exec test-container --user 0 --group 0 --cwd /home/ubuntu/craft-parts -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
           else
-            lxc exec test-container -- sudo -i -u ubuntu env CI=true make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+            lxc exec test-container --user 0 --group 0 --cwd /home/ubuntu/craft-parts -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and requires_root'"
           fi
