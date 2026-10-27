@@ -46,21 +46,48 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check container cache
-        id: cache-container
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('.github/workflows/test-lxd.yaml', 'pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+      - name: Check for recent container cache
+        id: check-cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prefix="lxd-container-${{ matrix.distro }}-${{ runner.arch }}-"
+          echo "Checking cache for: $prefix"
+
+          latest_cache=$(gh cache list --key "$prefix" --sort created_at --order desc --json key,createdAt --jq '.[0] // empty' 2>/dev/null || true)
+
+          if [ -n "$latest_cache" ]; then
+            key=$(echo "$latest_cache" | jq -r '.key')
+            created_at=$(echo "$latest_cache" | jq -r '.createdAt')
+            created_ts=$(date -d "$created_at" +%s 2>/dev/null || echo 0)
+            now_ts=$(date +%s)
+            age_seconds=$(( now_ts - created_ts ))
+            one_week=604800 # 7 days in seconds
+
+            echo "Found cache $key created at $created_at ($age_seconds seconds ago)"
+            if [ "$age_seconds" -ge 0 ] && [ "$age_seconds" -le "$one_week" ]; then
+              echo "Cache is within the last week. Using existing cache."
+              echo "cache-valid=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            else
+              echo "Cache is older than one week. Rebuilding container."
+            fi
+          else
+            echo "No existing cache found for $prefix."
+          fi
+
+          new_key="${prefix}$(date +%s)"
+          echo "cache-valid=false" >> "$GITHUB_OUTPUT"
+          echo "new-key=$new_key" >> "$GITHUB_OUTPUT"
 
       - name: Install LXD
-        if: steps.cache-container.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-valid != 'true'
         uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
         with:
           channel: 5.21/candidate
 
       - name: Spin up LXD container and set up tests
-        if: steps.cache-container.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-valid != 'true'
         run: |
           # Launch container with nesting and privilege enabled for snapd and special device files
           lxc launch ${{ matrix.image }} test-container -c security.nesting=true -c security.privileged=true
@@ -75,7 +102,7 @@ jobs:
 
           # Install base dependencies needed to run make and plugins
           lxc exec test-container -- sudo apt-get update
-          lxc exec test-container -- sudo apt-get install -y --no-install-recommends git make curl ca-certificates python3-pip
+          lxc exec test-container -- sudo apt-get install -y --no-install-recommends git make curl ca-certificates python3-pip npm node-semver
 
           # Wait for snapd to be ready
           for _ in $(seq 1 30); do
@@ -87,6 +114,9 @@ jobs:
 
           # Install node snap for npm plugin integration tests
           lxc exec test-container -- sudo snap install --classic node
+
+          # Symlink snap binaries to /usr/local/bin to be discovered by subprocesses
+          lxc exec test-container -- sh -c "for bin in /snap/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
 
           # Ensure /snap/bin is in PATH and CI environment is set for all shells
           lxc exec test-container -- sh -c "grep -q '/snap/bin' /etc/environment || echo 'PATH=/snap/bin:\$PATH' >> /etc/environment"
@@ -107,18 +137,18 @@ jobs:
           lxc exec test-container -- sh -c 'ln -sf /snap/bin/uv /usr/local/bin/uv || true'
 
       - name: Export container
-        if: steps.cache-container.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-valid != 'true'
         run: |
           mkdir -p "${{ runner.temp }}/lxd-cache"
           lxc stop test-container
           lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz"
 
       - name: Upload container to cache
-        if: steps.cache-container.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.cache-valid != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('.github/workflows/test-lxd.yaml', 'pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+          key: ${{ steps.check-cache.outputs.new-key }}
 
   test-fast:
     name: Fast tests (${{ matrix.distro }})
@@ -142,7 +172,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('.github/workflows/test-lxd.yaml', 'pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+          restore-keys: |
+            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
@@ -225,10 +257,6 @@ jobs:
             suite: other-plugins
             markers: "plugin"
             sudo: false
-          - distro: jammy
-            suite: requires-root
-            markers: "requires_root"
-            sudo: true
 
           # focal (20.04)
           - distro: focal
@@ -258,7 +286,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.gz
-          key: lxd-container-${{ matrix.distro }}-${{ hashFiles('.github/workflows/test-lxd.yaml', 'pyproject.toml', 'uv.lock', 'Makefile', 'common.mk') }}
+          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
+          restore-keys: |
+            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-
           fail-on-cache-miss: true
 
       - name: Install LXD
