@@ -178,8 +178,8 @@ jobs:
           # Run make setup using configured Python
           lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
 
-          # Ensure uv is easily discoverable on all paths
-          lxc exec test-container -- sh -c 'ln -sf /snap/bin/uv /usr/local/bin/uv || true'
+          # Ensure snap binaries (rustup, chisel, uv) are discoverable on all paths
+          lxc exec test-container -- sh -c "for bin in /snap/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
 
       - name: Export container
         if: steps.check-cache.outputs.cache-valid != 'true'
@@ -252,7 +252,7 @@ jobs:
 
       - name: Run fast tests (non-root)
         run: |
-          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu/craft-parts -- env CI=true HOME=/home/ubuntu UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-fast
+          lxc exec test-container -- sudo -i -u ubuntu env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-fast
 
   test-slow:
     name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
@@ -395,7 +395,7 @@ jobs:
 
       - name: Run slow tests (non-root)
         run: |
-          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu/craft-parts -- env CI=true HOME=/home/ubuntu UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          lxc exec test-container -- sudo -i -u ubuntu env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
 
   test-requires-root:
     name: Requires root (${{ matrix.distro }} - ${{ matrix.speed }})
@@ -453,6 +453,7 @@ jobs:
       - name: Import and start container
         run: |
           lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.gz" test-container
+          lxc config set test-container security.privileged true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
 
@@ -463,7 +464,7 @@ jobs:
       - name: Run root tests
         run: |
           if [ "${{ matrix.speed }}" = "fast" ]; then
-            lxc exec test-container --user 0 --group 0 --cwd /home/ubuntu/craft-parts -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
+            lxc exec test-container -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
           else
-            lxc exec test-container --user 0 --group 0 --cwd /home/ubuntu/craft-parts -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and requires_root'"
+            lxc exec test-container -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and requires_root'"
           fi
