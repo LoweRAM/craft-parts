@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build-container:
-    name: Build container (${{ matrix.distro }} - ${{ matrix.flavor }})
+    name: Build container (${{ matrix.distro }})
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -33,7 +33,6 @@ jobs:
       fail-fast: false
       matrix:
         distro: [focal, jammy, noble, resolute, stonking]
-        flavor: [other, python, java]
         include:
           - distro: focal
             lxd_channel: "5.0"
@@ -60,12 +59,6 @@ jobs:
             python: "/usr/bin/python3"
             uv_downloads: "never"
             uv_preference: "only-system"
-          - flavor: other
-            setup_vars: "NO_JAVA=1 NO_PYTHON=1"
-          - flavor: python
-            setup_vars: "NO_JAVA=1 NO_PLUGIN=1"
-          - flavor: java
-            setup_vars: "NO_PYTHON=1 NO_PLUGIN=1"
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          prefix="lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-"
+          prefix="lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-"
           echo "Checking cache for: $prefix"
 
           latest_cache=$(gh cache list --key "$prefix" --sort created_at --order desc --json key,createdAt --jq '.[0] // empty' 2>/dev/null || true)
@@ -168,7 +161,7 @@ jobs:
           tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
 
           # Run make setup and setup-tests using configured Python
-          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup
           lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup-tests
 
           # Ensure snap and user binaries (rustup, chisel, uv, poetry) are discoverable on all paths
@@ -178,17 +171,17 @@ jobs:
         if: steps.check-cache.outputs.cache-valid != 'true'
         run: |
           mkdir -p "${{ runner.temp }}/lxd-cache"
-          lxc exec test-container -- apt-get clean || true
-          lxc exec test-container -- rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* || true
+          lxc exec test-container -- apt clean || true
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- uv cache clean || true
           lxc stop test-container
           lxc config set backups.compression_algorithm zstd
-          lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.zst"
+          lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst"
 
       - name: Upload container to cache
         if: steps.check-cache.outputs.cache-valid != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.zst
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst
           key: ${{ steps.check-cache.outputs.new-key }}
 
   test-fast:
@@ -239,15 +232,15 @@ jobs:
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.zst
-          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst
+          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Import and start container
         run: |
-          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.zst" test-container
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst" test-container
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
           lxc exec test-container -- systemctl start systemd-logind || true
@@ -316,19 +309,14 @@ jobs:
             python: "/usr/bin/python3"
             uv_preference: "only-system"
           - suite: common
-            flavor: other
             markers: "not java and not python and not plugin and not flaky and not requires_root"
           - suite: flaky
-            flavor: other
             markers: "flaky"
           - suite: java
-            flavor: java
             markers: "java"
           - suite: python
-            flavor: python
             markers: "python"
           - suite: other-plugins
-            flavor: other
             markers: "plugin"
     steps:
       - name: Checkout code
@@ -345,15 +333,15 @@ jobs:
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.zst
-          key: lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst
+          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-${{ matrix.flavor }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Import and start container
         run: |
-          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-${{ matrix.flavor }}.tar.zst" test-container
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst" test-container
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
           lxc exec test-container -- systemctl start systemd-logind || true
@@ -436,16 +424,16 @@ jobs:
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.zst
-          key: lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+          path: ${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst
+          key: lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           restore-keys: |
-            lxd-container-${{ matrix.distro }}-other-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
+            lxd-container-${{ matrix.distro }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'uv.lock', '.github/workflows/test-lxd.yaml') }}-
           fail-on-cache-miss: true
 
       - name: Import and start container
         run: |
-          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}-other.tar.zst" test-container
-          lxc config set test-container security.privileged true
+          lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst" test-container
+          lxc config set test-container security.syscalls.intercept.mknod true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
 
