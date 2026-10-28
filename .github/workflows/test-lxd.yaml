@@ -155,15 +155,15 @@ jobs:
           lxc exec test-container -- sudo git config --system --add safe.directory '*'
 
           # Copy repository into container
-          lxc exec test-container -- sudo -i -u ubuntu mkdir -p /home/ubuntu/craft-parts
-          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- mkdir -p /home/ubuntu/craft-parts
+          tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
 
           # Run make setup and setup-tests using configured Python
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup-tests
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" ${{ matrix.setup_vars }} make -C /home/ubuntu/craft-parts setup
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup-tests
 
-          # Ensure snap binaries (rustup, chisel, uv) are discoverable on all paths
-          lxc exec test-container -- sh -c "for bin in /snap/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
+          # Ensure snap and user binaries (rustup, chisel, uv, poetry) are discoverable on all paths
+          lxc exec test-container -- sh -c "for bin in /snap/bin/* /home/ubuntu/.local/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
 
       - name: Export container
         if: steps.check-cache.outputs.cache-valid != 'true'
@@ -250,12 +250,12 @@ jobs:
           done
 
           # Sync latest code into container
-          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
-          lxc exec test-container -- sudo git config --system --add safe.directory '*'
+          tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- git config --system --add safe.directory '*'
 
       - name: Run fast tests (non-root)
         run: |
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-fast
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-fast
 
   test-slow:
     name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
@@ -344,12 +344,12 @@ jobs:
           done
 
           # Sync latest code into container
-          tar -cf - . | lxc exec test-container -- sudo -i -u ubuntu tar -xf - -C /home/ubuntu/craft-parts
-          lxc exec test-container -- sudo git config --system --add safe.directory '*'
+          tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
+          lxc exec test-container -- git config --system --add safe.directory '*'
 
       - name: Run slow tests (non-root)
         run: |
-          lxc exec test-container -- sudo -i -u ubuntu env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
 
   test-requires-root:
     name: Requires root (${{ matrix.distro }} - ${{ matrix.speed }})

@@ -67,8 +67,12 @@ APT_PACKAGES += mmdebstrap
 endif
 
 # Dependencies for sources
-ifeq ($(wildcard /usr/share/doc/p7zip-full/copyright),)
+ifeq ($(wildcard /usr/share/doc/p7zip-full/copyright /usr/share/doc/7zip/copyright),)
+ifneq ($(filter $(VERSION_CODENAME),focal jammy),)
 APT_PACKAGES += p7zip-full
+else
+APT_PACKAGES += 7zip
+endif
 endif
 ifeq ($(wildcard /usr/share/doc/curl/copyright),)
 APT_PACKAGES += curl
@@ -131,11 +135,12 @@ endif
 
 # Python tools - used for python plugin integration tests.
 ifneq ($(NO_PYTHON),1)
+ifeq ($(VERSION_CODENAME),focal)
+# On Focal, poetry and its export plugin are not in apt; provide them using uv tool
+INSTALL_POETRY = 1
+else
 ifeq ($(wildcard /usr/share/doc/python3-poetry/copyright),)
 APT_PACKAGES += python3-poetry
-endif
-ifeq ($(wildcard /usr/share/doc/python3-dev/copyright),)
-APT_PACKAGES += python3-dev
 endif
 # Poetry 2+ removes the export subcommand and requires you to get a plugin for it
 # However, jammy uses an older poetry version that still has that subcommand
@@ -143,7 +148,13 @@ ifneq ($(VERSION_CODENAME),jammy)
 ifeq ($(wildcard /usr/share/doc/python3-poetry-plugin-export/copyright),)
 APT_PACKAGES += python3-poetry-plugin-export
 endif
+endif
+endif
+ifeq ($(wildcard /usr/share/doc/python3-dev/copyright),)
+APT_PACKAGES += python3-dev
+endif
 # On Jammy, we can use pip to install meson. Everywhere else we install it through apt.
+ifneq ($(VERSION_CODENAME),jammy)
 ifeq ($(wildcard /usr/share/doc/meson/copyright),)
 APT_PACKAGES += meson
 endif
@@ -208,12 +219,15 @@ endif
 ifeq ($(wildcard /usr/share/doc/bison/copyright),)
 APT_PACKAGES += bison
 endif
-# We'll check for any dotnet SDK, but install dotnet 8 since that version is common to
-# 22.04 -> 25.10 (and possibly 26.04).
+# We'll check for any dotnet SDK, but install dotnet 10 by default (dotnet 8 on older releases).
 # On focal, we'll get the snap instead.
 ifeq ($(wildcard /usr/share/doc/dotnet-sdk-*/copyright),)
 ifneq ($(UBUNTU_CODENAME),focal)
+ifneq ($(filter $(VERSION_CODENAME),jammy noble oracular plucky questing),)
 APT_PACKAGES += dotnet-sdk-8.0
+else
+APT_PACKAGES += dotnet-sdk-10.0
+endif
 endif
 endif
 ifeq ($(wildcard /usr/share/doc/gcc/copyright),)
@@ -293,13 +307,24 @@ install-build-snaps: install-chisel install-go install-core20 install-dotnet ins
 
 # Used for installing build dependencies in CI.
 .PHONY: install-build-deps
-install-build-deps: _gh-runner-clean install-lint-build-deps install-build-snaps
+install-build-deps: _gh-runner-clean install-lint-build-deps install-build-snaps install-poetry
 ifeq ($(APT_PACKAGES),)
 else ifeq ($(shell which apt-get),)
 	$(warning Cannot install build dependencies without apt.)
 	$(warning Please ensure the equivalents to these packages are installed: $(APT_PACKAGES))
 else
 	sudo $(APT) install $(APT_PACKAGES)
+endif
+
+.PHONY: install-poetry
+install-poetry:
+ifeq ($(INSTALL_POETRY),1)
+ifeq ($(shell which poetry),)
+	uv tool install --with poetry-plugin-export poetry
+ifneq ($(shell which sudo),)
+	-sudo ln -sf $(HOME)/.local/bin/poetry /usr/local/bin/poetry 2>/dev/null || true
+endif
+endif
 endif
 
 # If additional build dependencies need installing in order to build the linting env.
