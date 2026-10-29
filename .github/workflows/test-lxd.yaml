@@ -142,9 +142,10 @@ jobs:
           lxc exec test-container -- cloud-init status --wait || true
           lxc exec test-container -- systemctl is-system-running --wait || true
 
-          # Ensure user ubuntu exists with passwordless sudo
+          # Ensure user ubuntu exists with passwordless sudo and world-traversable home for snaps
           lxc exec test-container -- sh -c 'id -u ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 ubuntu'
           lxc exec test-container -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && chmod 0440 /etc/sudoers.d/ubuntu'
+          lxc exec test-container -- chmod 755 /home/ubuntu
 
           # Ensure systemd-logind and user session are active for non-root snaps
           lxc exec test-container -- systemctl start systemd-logind || true

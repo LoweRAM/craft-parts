@@ -63,7 +63,7 @@ ifeq ($(wildcard /usr/share/doc/python3-venv/copyright),)
 APT_PACKAGES += python3-venv
 endif
 ifeq ($(wildcard /usr/share/doc/mmdebstrap/copyright),)
-APT_PACKAGES += mmdebstrap
+APT_PACKAGES += mmdebstrap fakechroot fakeroot
 endif
 
 # Dependencies for sources
