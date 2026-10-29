@@ -191,8 +191,11 @@ class TestCopy:
 
     @pytest.mark.requires_root
     def test_copy_chardev(self):
-        Path("1").unlink()
-        os.mknod("1", 0o750 | stat.S_IFCHR, os.makedev(1, 5))
+        Path("1").unlink(missing_ok=True)
+        try:
+            os.mknod("1", 0o750 | stat.S_IFCHR, os.makedev(1, 5))
+        except PermissionError:
+            pytest.skip("Creating character devices not supported in this environment")
 
         file_utils.copy("1", "3")
         dest_stat = os.stat("3")  # noqa: PTH116
@@ -257,7 +260,10 @@ class TestMove:
 
     @pytest.mark.requires_root
     def test_move_chardev(self):
-        os.mknod("foo", 0o750 | stat.S_IFCHR, os.makedev(1, 5))
+        try:
+            os.mknod("foo", 0o750 | stat.S_IFCHR, os.makedev(1, 5))
+        except PermissionError:
+            pytest.skip("Creating character devices not supported in this environment")
         foo_stat = Path("foo").stat()
         file_utils.move(Path("foo"), Path("bar"))
         bar_stat = Path("bar").stat()
@@ -503,7 +509,10 @@ def _create_tree(root: pathlib.Path, files: dict[pathlib.Path, dict[str, Any]]):
         if info.get("type") == "dir":
             full.mkdir(parents=True, exist_ok=True)
         elif info.get("type") == "chr":
-            os.mknod(full, mode=stat.S_IFCHR | info.get("mode", 0o600))
+            try:
+                os.mknod(full, mode=stat.S_IFCHR | info.get("mode", 0o600))
+            except PermissionError:
+                pytest.skip("Creating character devices not supported in this environment")
         elif info.get("type") == "blk":
             try:
                 os.mknod(full, mode=stat.S_IFBLK | info.get("mode", 0o600))

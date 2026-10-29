@@ -172,12 +172,15 @@ jobs:
           }
           lxc exec test-container -- snap version
 
-          # Configure environment: Python version settings
+          # Configure environment: Python and tool settings
           lxc exec test-container -- sh -c "echo 'CI=true' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'DEBIAN_FRONTEND=noninteractive' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'UV_PYTHON=${{ matrix.python }}' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'UV_PYTHON_DOWNLOADS=${{ matrix.uv_downloads }}' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'UV_PYTHON_PREFERENCE=${{ matrix.uv_preference }}' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'DOTNET_GCHeapHardLimit=536870912' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'DOTNET_EnableWriteXorExecute=0' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'DOTNET_CLI_TELEMETRY_OPTOUT=1' >> /etc/environment"
 
           # Trust repository paths globally for all users
           lxc exec test-container -- sudo git config --system --add safe.directory '*'
@@ -564,10 +567,24 @@ jobs:
           lxc config set test-container security.syscalls.intercept.mknod true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
+          lxc exec test-container -- systemctl start systemd-logind || true
+          lxc exec test-container -- loginctl enable-linger ubuntu || true
 
           # Wait for container networking and DNS resolution
           for _ in $(seq 1 30); do
             if lxc exec test-container -- getent hosts pypi.org >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Prevent AppArmor parser protocol incompatibility on older distros with modern host kernels
+          lxc exec test-container -- sh -c 'if [ -f /usr/sbin/apparmor_parser ] && [ ! -f /usr/sbin/apparmor_parser.real ]; then mv /usr/sbin/apparmor_parser /usr/sbin/apparmor_parser.real && printf "#!/bin/sh\n/usr/sbin/apparmor_parser.real \"\$@\" || exit 0\n" > /usr/sbin/apparmor_parser && chmod +x /usr/sbin/apparmor_parser; fi'
+
+          # Ensure snapd service and socket are ready
+          lxc exec test-container -- systemctl start snapd.socket snapd.service || true
+          for _ in $(seq 1 60); do
+            if lxc exec test-container -- sh -c 'snap version 2>/dev/null | grep -qE "^snapd +[0-9]"'; then
               break
             fi
             sleep 1
