@@ -109,9 +109,10 @@ class UvPlugin(BasePythonPlugin):
             or "$(which ${PARTS_PYTHON_INTERPRETER})"
         )
         return [
-            f'uv venv --relocatable --allow-existing --python {python_ver} "{self._get_venv_directory()}"',
+            f'_PARTS_BASE_PYTHON="{python_ver}"',
+            f'uv venv --relocatable --allow-existing --python "${{_PARTS_BASE_PYTHON}}" "{self._get_venv_directory()}"',
             f'PARTS_PYTHON_VENV_INTERP_PATH="{self._get_venv_directory()}/bin/${{PARTS_PYTHON_INTERPRETER}}"',
-            f'export UV_PYTHON="{python_ver}"',
+            'export UV_PYTHON="${_PARTS_BASE_PYTHON}"',
         ]
 
     @override

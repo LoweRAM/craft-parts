@@ -19,6 +19,7 @@
 import itertools
 import logging
 import shutil
+import subprocess
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
@@ -228,10 +229,11 @@ class Executor:
             if initial_step <= Step.OVERLAY:
                 for overlay in self._project_info.dirs.overlay_dirs.values():
                     if overlay.exists():
-                        try:
-                            shutil.rmtree(overlay)
-                        except (PermissionError, shutil.Error):
-                            subprocess.run(["sudo", "rm", "-rf", str(overlay)], check=False)
+                        shutil.rmtree(overlay, ignore_errors=True)
+                        if overlay.exists():
+                            subprocess.run(
+                                ["sudo", "rm", "-rf", str(overlay)], check=False
+                            )
 
     def _run_action(
         self,

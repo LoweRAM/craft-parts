@@ -62,7 +62,8 @@ jobs:
     steps:
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo rm -rf /var/lib/docker /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          df -h
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -221,6 +222,20 @@ jobs:
           # Ensure snap and user binaries (rustup, chisel, uv, poetry) are discoverable on all paths
           lxc exec test-container -- sh -c "for bin in /snap/bin/* /home/ubuntu/.local/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
 
+          # Ensure p7zip-full exists on newer distros where it was replaced by 7zip
+          lxc exec test-container -- sh -c '
+            if ! dpkg -s p7zip-full 2>/dev/null | grep -q "Status: install ok installed"; then
+              which 7z >/dev/null 2>&1 || apt-get install -y 7zip 2>/dev/null || true
+              if which 7z >/dev/null 2>&1; then
+                mkdir -p /root/p7z-dummy/DEBIAN
+                printf "Package: p7zip-full\nVersion: 99.0\nArchitecture: all\nMaintainer: Ubuntu Developers\nDescription: dummy transitional package for 7zip\n" > /root/p7z-dummy/DEBIAN/control
+                dpkg-deb -b /root/p7z-dummy /root/p7zip-full.deb
+                dpkg -i /root/p7zip-full.deb
+                rm -rf /root/p7z-dummy /root/p7zip-full.deb
+              fi
+            fi
+          '
+
       - name: Export container
         if: steps.check-cache.outputs.cache-valid != 'true'
         run: |
@@ -276,7 +291,8 @@ jobs:
     steps:
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo rm -rf /var/lib/docker /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          df -h
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -351,6 +367,18 @@ jobs:
           # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
           lxc exec test-container -- chmod 755 /home/ubuntu
           lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c '
+            if ! dpkg -s p7zip-full 2>/dev/null | grep -q "Status: install ok installed"; then
+              which 7z >/dev/null 2>&1 || apt-get install -y 7zip 2>/dev/null || true
+              if which 7z >/dev/null 2>&1; then
+                mkdir -p /root/p7z-dummy/DEBIAN
+                printf "Package: p7zip-full\nVersion: 99.0\nArchitecture: all\nMaintainer: Ubuntu Developers\nDescription: dummy transitional package for 7zip\n" > /root/p7z-dummy/DEBIAN/control
+                dpkg-deb -b /root/p7z-dummy /root/p7zip-full.deb
+                dpkg -i /root/p7zip-full.deb
+                rm -rf /root/p7z-dummy /root/p7zip-full.deb
+              fi
+            fi
+          '
           lxc exec test-container -- sh -c 'find /tmp -maxdepth 1 \( -name "pytest*" -o -name "craft-parts*" \) -exec rm -rf {} + 2>/dev/null || true'
           lxc exec test-container -- sh -c 'mkdir -p /tmp/snap-private-tmp && chmod 700 /tmp/snap-private-tmp'
 
@@ -360,7 +388,7 @@ jobs:
 
       - name: Run fast tests (non-root)
         run: |
-          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-fast
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DOTNET_GCHeapHardLimit=536870912 DOTNET_EnableWriteXorExecute=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-fast
 
   test-slow:
     name: Slow tests (${{ matrix.distro }} - ${{ matrix.suite }})
@@ -409,7 +437,8 @@ jobs:
     steps:
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo rm -rf /var/lib/docker /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          df -h
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -484,6 +513,18 @@ jobs:
           # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
           lxc exec test-container -- chmod 755 /home/ubuntu
           lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c '
+            if ! dpkg -s p7zip-full 2>/dev/null | grep -q "Status: install ok installed"; then
+              which 7z >/dev/null 2>&1 || apt-get install -y 7zip 2>/dev/null || true
+              if which 7z >/dev/null 2>&1; then
+                mkdir -p /root/p7z-dummy/DEBIAN
+                printf "Package: p7zip-full\nVersion: 99.0\nArchitecture: all\nMaintainer: Ubuntu Developers\nDescription: dummy transitional package for 7zip\n" > /root/p7z-dummy/DEBIAN/control
+                dpkg-deb -b /root/p7z-dummy /root/p7zip-full.deb
+                dpkg -i /root/p7zip-full.deb
+                rm -rf /root/p7z-dummy /root/p7zip-full.deb
+              fi
+            fi
+          '
           lxc exec test-container -- sh -c 'find /tmp -maxdepth 1 \( -name "pytest*" -o -name "craft-parts*" \) -exec rm -rf {} + 2>/dev/null || true'
           lxc exec test-container -- sh -c 'mkdir -p /tmp/snap-private-tmp && chmod 700 /tmp/snap-private-tmp'
 
@@ -493,7 +534,7 @@ jobs:
 
       - name: Run slow tests (non-root)
         run: |
-          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
+          lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DOTNET_GCHeapHardLimit=536870912 DOTNET_EnableWriteXorExecute=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and (${{ matrix.markers }})'"
 
   test-requires-root:
     name: Requires root (${{ matrix.distro }} - ${{ matrix.speed }})
@@ -532,7 +573,8 @@ jobs:
     steps:
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo rm -rf /var/lib/docker /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          df -h
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -608,6 +650,18 @@ jobs:
           # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
           lxc exec test-container -- chmod 755 /home/ubuntu
           lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c '
+            if ! dpkg -s p7zip-full 2>/dev/null | grep -q "Status: install ok installed"; then
+              which 7z >/dev/null 2>&1 || apt-get install -y 7zip 2>/dev/null || true
+              if which 7z >/dev/null 2>&1; then
+                mkdir -p /root/p7z-dummy/DEBIAN
+                printf "Package: p7zip-full\nVersion: 99.0\nArchitecture: all\nMaintainer: Ubuntu Developers\nDescription: dummy transitional package for 7zip\n" > /root/p7z-dummy/DEBIAN/control
+                dpkg-deb -b /root/p7z-dummy /root/p7zip-full.deb
+                dpkg -i /root/p7zip-full.deb
+                rm -rf /root/p7z-dummy /root/p7zip-full.deb
+              fi
+            fi
+          '
           lxc exec test-container -- sh -c 'find /tmp -maxdepth 1 \( -name "pytest*" -o -name "craft-parts*" \) -exec rm -rf {} + 2>/dev/null || true'
           lxc exec test-container -- sh -c 'mkdir -p /tmp/snap-private-tmp && chmod 700 /tmp/snap-private-tmp'
 
@@ -618,7 +672,7 @@ jobs:
       - name: Run root tests
         run: |
           if [ "${{ matrix.speed }}" = "fast" ]; then
-            lxc exec test-container -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
+            lxc exec test-container -- env CI=true DOTNET_GCHeapHardLimit=536870912 DOTNET_EnableWriteXorExecute=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="-m 'not slow and requires_root'"
           else
-            lxc exec test-container -- env CI=true UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and requires_root'"
+            lxc exec test-container -- env CI=true DOTNET_GCHeapHardLimit=536870912 DOTNET_EnableWriteXorExecute=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="never" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" PATH="/snap/bin:$PATH" make -C /home/ubuntu/craft-parts test-coverage PYTEST_ADDOPTS="--no-header -v -rN -m 'slow and requires_root'"
           fi

@@ -116,9 +116,7 @@ def tmp_homedir_path():
         if os.geteuid() == 0 and pathlib.Path("/home/ubuntu").exists()
         else pathlib.Path.home()
     )
-    with tempfile.TemporaryDirectory(
-        prefix="craft-parts-tests", dir=home
-    ) as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="craft-parts-tests", dir=home) as tmp_dir:
         yield pathlib.Path(tmp_dir)
 
 

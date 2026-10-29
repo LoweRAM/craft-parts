@@ -512,7 +512,9 @@ def _create_tree(root: pathlib.Path, files: dict[pathlib.Path, dict[str, Any]]):
             try:
                 os.mknod(full, mode=stat.S_IFCHR | info.get("mode", 0o600))
             except PermissionError:
-                pytest.skip("Creating character devices not supported in this environment")
+                pytest.skip(
+                    "Creating character devices not supported in this environment"
+                )
         elif info.get("type") == "blk":
             try:
                 os.mknod(full, mode=stat.S_IFBLK | info.get("mode", 0o600))

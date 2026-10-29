@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """Integration tests for plugin overlay commands without partitions (CRAFT-5027)."""
 
+import os
 import shutil
 import subprocess
 import tempfile

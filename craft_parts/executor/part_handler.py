@@ -19,6 +19,7 @@
 import logging
 import os
 import shutil
+import subprocess
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -1471,10 +1472,12 @@ def _remove(filename: Path) -> None:
     """
     if filename.is_symlink() or filename.is_file():
         logger.debug("remove file %s", filename)
-        filename.unlink()
+        filename.unlink(missing_ok=True)
     elif filename.is_dir():
         logger.debug("remove directory %s", filename)
-        shutil.rmtree(filename)
+        shutil.rmtree(filename, ignore_errors=True)
+        if filename.exists():
+            subprocess.run(["sudo", "rm", "-rf", str(filename)], check=False)
 
 
 def _apply_file_filter(
