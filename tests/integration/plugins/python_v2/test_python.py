@@ -25,10 +25,10 @@ from craft_parts.plugins.python_v2.python_plugin import PythonPlugin
 from craft_parts.utils import os_utils
 
 
-def is_ubuntu_jammy() -> bool:
+def is_old_ubuntu() -> bool:
     release = os_utils.OsRelease()
     try:
-        return release.id() == "ubuntu" and release.version_id() == "22.04"
+        return release.id() == "ubuntu" and release.version_id() in ("20.04", "22.04")
     except errors.OsReleaseIdError:
         return False
 
@@ -37,7 +37,7 @@ pytestmark = [
     pytest.mark.slow,
     pytest.mark.python,
     pytest.mark.skipif(
-        is_ubuntu_jammy(), reason="Needs new enough pip provided by the system."
+        is_old_ubuntu(), reason="Needs new enough pip provided by the system."
     ),
 ]
 

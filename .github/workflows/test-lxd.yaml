@@ -60,6 +60,16 @@ jobs:
             uv_downloads: "never"
             uv_preference: "only-system"
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /opt/hostedtoolcache
+          sudo fallocate -l 4G /swapfile 2>/dev/null || true
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile || true
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -164,6 +174,27 @@ jobs:
           lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup
           lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- env CI=true DEBIAN_FRONTEND=noninteractive UV_PYTHON="${{ matrix.python }}" UV_PYTHON_DOWNLOADS="${{ matrix.uv_downloads }}" UV_PYTHON_PREFERENCE="${{ matrix.uv_preference }}" make -C /home/ubuntu/craft-parts setup-tests
 
+          # Ensure /etc/lsb-release exists for chisel compatibility on newer releases
+          lxc exec test-container -- sh -c "
+            if [ ! -f /etc/lsb-release ] && [ -f /etc/os-release ]; then
+              . /etc/os-release
+              printf 'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=%s\nDISTRIB_CODENAME=%s\nDISTRIB_DESCRIPTION=\"%s\"\n' \"\$VERSION_ID\" \"\$VERSION_CODENAME\" \"\$PRETTY_NAME\" > /etc/lsb-release
+            fi
+          "
+
+          # Ensure unprivileged users can mount fuse-overlayfs and unmount cleanly
+          lxc exec test-container -- sh -c 'chmod 4755 /usr/bin/fuse-overlayfs /bin/umount /usr/bin/umount 2>/dev/null || true'
+
+          # Ensure python3 points to managed python3.10 on focal
+          lxc exec test-container -- sh -c "
+            if [ -d /home/ubuntu/.local/share/uv/python ]; then
+              py310=\$(find /home/ubuntu/.local/share/uv/python -name python3.10 -type f 2>/dev/null | head -n 1)
+              if [ -n \"\$py310\" ]; then
+                ln -sf \"\$py310\" /usr/local/bin/python3
+              fi
+            fi
+          "
+
           # Ensure snap and user binaries (rustup, chisel, uv, poetry) are discoverable on all paths
           lxc exec test-container -- sh -c "for bin in /snap/bin/* /home/ubuntu/.local/bin/*; do [ -e \"\$bin\" ] && ln -sf \"\$bin\" /usr/local/bin/ || true; done"
 
@@ -218,6 +249,16 @@ jobs:
             python: "/usr/bin/python3"
             uv_preference: "only-system"
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /opt/hostedtoolcache
+          sudo fallocate -l 4G /swapfile 2>/dev/null || true
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile || true
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -258,8 +299,8 @@ jobs:
           lxc exec test-container -- sh -c 'if [ -f /usr/sbin/apparmor_parser ] && [ ! -f /usr/sbin/apparmor_parser.real ]; then mv /usr/sbin/apparmor_parser /usr/sbin/apparmor_parser.real && printf "#!/bin/sh\n/usr/sbin/apparmor_parser.real \"\$@\" || exit 0\n" > /usr/sbin/apparmor_parser && chmod +x /usr/sbin/apparmor_parser; fi'
 
           # Ensure snapd service and socket are ready
-          for _ in $(seq 1 30); do
-            lxc exec test-container -- systemctl restart snapd.socket snapd.service >/dev/null 2>&1 || true
+          lxc exec test-container -- systemctl start snapd.socket snapd.service || true
+          for _ in $(seq 1 60); do
             if lxc exec test-container -- sh -c 'snap version 2>/dev/null | grep -qE "^snapd +[0-9]"'; then
               break
             fi
@@ -319,6 +360,16 @@ jobs:
           - suite: other-plugins
             markers: "plugin"
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /opt/hostedtoolcache
+          sudo fallocate -l 4G /swapfile 2>/dev/null || true
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile || true
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -359,8 +410,8 @@ jobs:
           lxc exec test-container -- sh -c 'if [ -f /usr/sbin/apparmor_parser ] && [ ! -f /usr/sbin/apparmor_parser.real ]; then mv /usr/sbin/apparmor_parser /usr/sbin/apparmor_parser.real && printf "#!/bin/sh\n/usr/sbin/apparmor_parser.real \"\$@\" || exit 0\n" > /usr/sbin/apparmor_parser && chmod +x /usr/sbin/apparmor_parser; fi'
 
           # Ensure snapd service and socket are ready
-          for _ in $(seq 1 30); do
-            lxc exec test-container -- systemctl restart snapd.socket snapd.service >/dev/null 2>&1 || true
+          lxc exec test-container -- systemctl start snapd.socket snapd.service || true
+          for _ in $(seq 1 60); do
             if lxc exec test-container -- sh -c 'snap version 2>/dev/null | grep -qE "^snapd +[0-9]"'; then
               break
             fi
@@ -410,6 +461,16 @@ jobs:
             python: "/usr/bin/python3"
             uv_preference: "only-system"
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /opt/hostedtoolcache
+          sudo fallocate -l 4G /swapfile 2>/dev/null || true
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile || true
+          fi
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -433,9 +494,12 @@ jobs:
       - name: Import and start container
         run: |
           lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst" test-container
-          lxc config set test-container security.syscalls.intercept.mknod true
+          lxc config set test-container security.privileged true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
+
+          # Fix DNS in privileged containers where systemd-resolved fails under older/newer host kernels
+          lxc exec test-container -- sh -c 'rm -f /etc/resolv.conf && printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf'
 
           # Wait for container networking and DNS resolution
           for _ in $(seq 1 30); do
