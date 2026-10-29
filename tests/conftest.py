@@ -111,8 +111,13 @@ def tmp_homedir_path():
     This works around temporary directories being of tmpfs and is an accessible
     location for snaps with the 'home' plug like chisel.
     """
+    home = (
+        pathlib.Path("/home/ubuntu")
+        if os.geteuid() == 0 and pathlib.Path("/home/ubuntu").exists()
+        else pathlib.Path.home()
+    )
     with tempfile.TemporaryDirectory(
-        prefix="craft-parts-tests", dir=pathlib.Path.home()
+        prefix="craft-parts-tests", dir=home
     ) as tmp_dir:
         yield pathlib.Path(tmp_dir)
 

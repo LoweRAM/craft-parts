@@ -45,7 +45,12 @@ pytestmark = [
 def _chisel_cache(host_arch):
     """Session-scoped chisel base that downloads packages once."""
     arch = host_arch
-    cache_dir = Path(tempfile.mkdtemp(prefix="craft-parts-chisel-", dir=Path.home()))
+    home_dir = (
+        Path("/home/ubuntu")
+        if os.geteuid() == 0 and Path("/home/ubuntu").exists()
+        else Path.home()
+    )
+    cache_dir = Path(tempfile.mkdtemp(prefix="craft-parts-chisel-", dir=home_dir))
     subprocess.run(
         [
             "chisel",
