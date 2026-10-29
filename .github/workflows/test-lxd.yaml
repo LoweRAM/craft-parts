@@ -201,10 +201,9 @@ jobs:
             fi
           "
 
-          # On resolute and stonking, set SUID and wrapper for fuse-overlayfs to avoid libfuse 3.18 bug
+          # On resolute and stonking, set SUID for fuse-overlayfs and umount to avoid libfuse 3.18 bug
           if [ "${{ matrix.distro }}" = "resolute" ] || [ "${{ matrix.distro }}" = "stonking" ]; then
             lxc exec test-container -- chmod 4755 /usr/bin/fuse-overlayfs /bin/umount /usr/bin/umount 2>/dev/null || true
-            lxc exec test-container -- sh -c "printf '#!/bin/sh\nexec /usr/bin/fuse-overlayfs -ouidmapping=0:\$(id -u):1,gidmapping=0:\$(id -g):1 \"\$@\"\n' > /usr/local/bin/fuse-overlayfs && chmod 755 /usr/local/bin/fuse-overlayfs"
           fi
 
           # Ensure python3 points to managed python3.10 on focal

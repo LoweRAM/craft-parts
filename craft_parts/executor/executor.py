@@ -228,7 +228,10 @@ class Executor:
             if initial_step <= Step.OVERLAY:
                 for overlay in self._project_info.dirs.overlay_dirs.values():
                     if overlay.exists():
-                        shutil.rmtree(overlay)
+                        try:
+                            shutil.rmtree(overlay)
+                        except (PermissionError, shutil.Error):
+                            subprocess.run(["sudo", "rm", "-rf", str(overlay)], check=False)
 
     def _run_action(
         self,

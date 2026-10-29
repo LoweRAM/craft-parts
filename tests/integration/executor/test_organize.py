@@ -47,12 +47,14 @@ def test_organize_special_files(new_dir, mocker):
     (source_dir / "foo.txt").touch()
     try:
         os.mknod(source_dir / "dev/null", 0o777 | stat.S_IFCHR, os.makedev(1, 3))
+        has_null = True
     except (FileNotFoundError, PermissionError):
-        pass
+        has_null = False
     try:
         os.mknod(source_dir / "dev/loop99", 0o777 | stat.S_IFBLK, os.makedev(7, 99))
+        has_loop = True
     except (FileNotFoundError, PermissionError):
-        pass
+        has_loop = False
     os.mkfifo(source_dir / "bar.fifo")
     (source_dir / "qux").symlink_to("quux")
 
@@ -71,8 +73,10 @@ def test_organize_special_files(new_dir, mocker):
     assert Path("prime/qux").exists() is False
 
     assert Path("prime/dest/foo.txt").is_file()
-    assert stat.S_ISCHR(os.stat("prime/dest/dev/null").st_mode)  # noqa: PTH116
-    assert stat.S_ISBLK(os.stat("prime/dest/dev/loop99").st_mode)  # noqa: PTH116
+    if has_null:
+        assert stat.S_ISCHR(os.stat("prime/dest/dev/null").st_mode)  # noqa: PTH116
+    if has_loop:
+        assert stat.S_ISBLK(os.stat("prime/dest/dev/loop99").st_mode)  # noqa: PTH116
     assert stat.S_ISFIFO(os.stat("prime/dest/bar.fifo").st_mode)  # noqa: PTH116
     assert Path("prime/dest/qux").readlink() == Path("quux")
 
