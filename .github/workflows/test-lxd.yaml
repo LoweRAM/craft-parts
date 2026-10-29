@@ -109,6 +109,28 @@ jobs:
         uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
         with:
           channel: ${{ matrix.lxd_channel }}
+          preseed: |
+            config: {}
+            networks:
+              - name: lxdbr0
+                type: bridge
+                config:
+                  ipv4.address: auto
+                  ipv6.address: auto
+            storage_pools:
+              - name: default
+                driver: dir
+            profiles:
+              - name: default
+                devices:
+                  root:
+                    path: /
+                    pool: default
+                    type: disk
+                  eth0:
+                    name: eth0
+                    network: lxdbr0
+                    type: nic
 
       - name: Spin up LXD container and set up tests
         if: steps.check-cache.outputs.cache-valid != 'true'
@@ -176,8 +198,11 @@ jobs:
             fi
           "
 
-          # Ensure unprivileged users can mount fuse-overlayfs and unmount cleanly
-          lxc exec test-container -- sh -c 'chmod 4755 /usr/bin/fuse-overlayfs /bin/umount /usr/bin/umount 2>/dev/null || true'
+          # On resolute and stonking, set SUID and wrapper for fuse-overlayfs to avoid libfuse 3.18 bug
+          if [ "${{ matrix.distro }}" = "resolute" ] || [ "${{ matrix.distro }}" = "stonking" ]; then
+            lxc exec test-container -- chmod 4755 /usr/bin/fuse-overlayfs /bin/umount /usr/bin/umount 2>/dev/null || true
+            lxc exec test-container -- sh -c "printf '#!/bin/sh\nexec /usr/bin/fuse-overlayfs -ouidmapping=0:\$(id -u):1,gidmapping=0:\$(id -g):1 \"\$@\"\n' > /usr/local/bin/fuse-overlayfs && chmod 755 /usr/local/bin/fuse-overlayfs"
+          fi
 
           # Ensure python3 points to managed python3.10 on focal
           lxc exec test-container -- sh -c "
@@ -257,6 +282,28 @@ jobs:
         uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
         with:
           channel: ${{ matrix.lxd_channel }}
+          preseed: |
+            config: {}
+            networks:
+              - name: lxdbr0
+                type: bridge
+                config:
+                  ipv4.address: auto
+                  ipv6.address: auto
+            storage_pools:
+              - name: default
+                driver: dir
+            profiles:
+              - name: default
+                devices:
+                  root:
+                    path: /
+                    pool: default
+                    type: disk
+                  eth0:
+                    name: eth0
+                    network: lxdbr0
+                    type: nic
 
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -362,6 +409,28 @@ jobs:
         uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
         with:
           channel: ${{ matrix.lxd_channel }}
+          preseed: |
+            config: {}
+            networks:
+              - name: lxdbr0
+                type: bridge
+                config:
+                  ipv4.address: auto
+                  ipv6.address: auto
+            storage_pools:
+              - name: default
+                driver: dir
+            profiles:
+              - name: default
+                devices:
+                  root:
+                    path: /
+                    pool: default
+                    type: disk
+                  eth0:
+                    name: eth0
+                    network: lxdbr0
+                    type: nic
 
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -457,6 +526,28 @@ jobs:
         uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
         with:
           channel: ${{ matrix.lxd_channel }}
+          preseed: |
+            config: {}
+            networks:
+              - name: lxdbr0
+                type: bridge
+                config:
+                  ipv4.address: auto
+                  ipv6.address: auto
+            storage_pools:
+              - name: default
+                driver: dir
+            profiles:
+              - name: default
+                devices:
+                  root:
+                    path: /
+                    pool: default
+                    type: disk
+                  eth0:
+                    name: eth0
+                    network: lxdbr0
+                    type: nic
 
       - name: Restore container from cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -470,12 +561,9 @@ jobs:
       - name: Import and start container
         run: |
           lxc import "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst" test-container
-          lxc config set test-container security.privileged true
+          lxc config set test-container security.syscalls.intercept.mknod true
           lxc start test-container
           lxc exec test-container -- systemctl is-system-running --wait || true
-
-          # Fix DNS in privileged containers where systemd-resolved fails under older/newer host kernels
-          lxc exec test-container -- sh -c 'rm -f /etc/resolv.conf && printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf'
 
           # Wait for container networking and DNS resolution
           for _ in $(seq 1 30); do

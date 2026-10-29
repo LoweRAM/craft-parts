@@ -46,7 +46,10 @@ def test_organize_special_files(new_dir, mocker):
     # File to be organized into overlay
     (source_dir / "foo.txt").touch()
     os.mknod(source_dir / "dev/null", 0o777 | stat.S_IFCHR, os.makedev(1, 3))
-    os.mknod(source_dir / "dev/loop99", 0o777 | stat.S_IFBLK, os.makedev(7, 99))
+    try:
+        os.mknod(source_dir / "dev/loop99", 0o777 | stat.S_IFBLK, os.makedev(7, 99))
+    except PermissionError:
+        pass
     os.mkfifo(source_dir / "bar.fifo")
     (source_dir / "qux").symlink_to("quux")
 

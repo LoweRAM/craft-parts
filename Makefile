@@ -68,7 +68,7 @@ endif
 
 # Dependencies for sources
 ifeq ($(wildcard /usr/share/doc/p7zip-full/copyright /usr/share/doc/7zip/copyright),)
-ifneq ($(shell $(APT)-cache show p7zip-full 2>/dev/null),)
+ifneq ($(shell apt-cache show p7zip-full 2>/dev/null),)
 APT_PACKAGES += p7zip-full
 else
 APT_PACKAGES += 7zip
