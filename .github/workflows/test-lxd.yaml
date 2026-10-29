@@ -181,6 +181,7 @@ jobs:
           lxc exec test-container -- sh -c "echo 'DOTNET_GCHeapHardLimit=536870912' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'DOTNET_EnableWriteXorExecute=0' >> /etc/environment"
           lxc exec test-container -- sh -c "echo 'DOTNET_CLI_TELEMETRY_OPTOUT=1' >> /etc/environment"
+          lxc exec test-container -- sh -c "echo 'TMPDIR=/var/tmp' >> /etc/environment"
 
           # Trust repository paths globally for all users
           lxc exec test-container -- sudo git config --system --add safe.directory '*'

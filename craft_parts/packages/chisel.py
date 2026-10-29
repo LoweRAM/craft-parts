@@ -80,9 +80,13 @@ def cut_slices(slices: list[str], target_dir: pathlib.Path) -> None:
     :param slices: The list of names of slices to cut.
     :param target_dir: The destination directory.
     """
+    target_dir.mkdir(parents=True, exist_ok=True)
     output_stream = StringIO()
-    handler = logging.StreamHandler(stream=output_stream)
-    logger.addHandler(handler)
+
+    def _log(line: str) -> None:
+        output_stream.write(line + "\n")
+        logger.debug(line)
+
     try:
         os_utils.process_run(
             [
@@ -93,11 +97,8 @@ def cut_slices(slices: list[str], target_dir: pathlib.Path) -> None:
                 f"--root={target_dir}",
                 *slices,
             ],
-            logger.debug,
+            _log,
         )
     except subprocess.CalledProcessError as err:
         command_output = output_stream.getvalue()
         raise errors.ChiselError(slices=slices, output=command_output) from err
-    finally:
-        logger.removeHandler(handler)
-        handler.close()
