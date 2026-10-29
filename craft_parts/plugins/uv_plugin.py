@@ -111,7 +111,7 @@ class UvPlugin(BasePythonPlugin):
         return [
             f'uv venv --relocatable --allow-existing --python {python_ver} "{self._get_venv_directory()}"',
             f'PARTS_PYTHON_VENV_INTERP_PATH="{self._get_venv_directory()}/bin/${{PARTS_PYTHON_INTERPRETER}}"',
-            'export UV_PYTHON="${PARTS_PYTHON_VENV_INTERP_PATH}"',
+            f'export UV_PYTHON="{python_ver}"',
         ]
 
     @override

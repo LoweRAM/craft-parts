@@ -872,7 +872,7 @@ class TestOverrideOverlayScriptWithMmdebstrap:
         cmd = [
             "sudo",
             "mmdebstrap",
-            "--mode=root",
+            "--mode=fakeroot",
             "--format=dir",
             "--variant=minbase",
             "--include=apt",
