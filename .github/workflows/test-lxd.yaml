@@ -227,7 +227,7 @@ jobs:
           mkdir -p "${{ runner.temp }}/lxd-cache"
           lxc exec test-container -- apt clean || true
           lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- uv cache clean || true
-          lxc exec test-container -- sh -c 'rm -rf /tmp/* /tmp/.* 2>/dev/null || true'
+          lxc exec test-container -- sh -c 'find /tmp -mindepth 1 -delete 2>/dev/null || true'
           lxc stop test-container
           lxc config set backups.compression_algorithm zstd
           lxc export test-container "${{ runner.temp }}/lxd-cache/${{ matrix.distro }}.tar.zst"
@@ -347,8 +347,10 @@ jobs:
             sleep 1
           done
 
-          # Clean temp directory to prevent disk exhaustion
-          lxc exec test-container -- sh -c 'rm -rf /tmp/* /tmp/.* 2>/dev/null || true'
+          # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
+          lxc exec test-container -- chmod 755 /home/ubuntu
+          lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c 'find /tmp -mindepth 1 -delete 2>/dev/null || true'
 
           # Sync latest code into container
           tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
@@ -477,8 +479,10 @@ jobs:
             sleep 1
           done
 
-          # Clean temp directory to prevent disk exhaustion
-          lxc exec test-container -- sh -c 'rm -rf /tmp/* /tmp/.* 2>/dev/null || true'
+          # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
+          lxc exec test-container -- chmod 755 /home/ubuntu
+          lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c 'find /tmp -mindepth 1 -delete 2>/dev/null || true'
 
           # Sync latest code into container
           tar -cf - . | lxc exec test-container --user 1000 --group 1000 --cwd /home/ubuntu --env HOME=/home/ubuntu --env USER=ubuntu -- tar -xf - -C /home/ubuntu/craft-parts
@@ -598,8 +602,10 @@ jobs:
             sleep 1
           done
 
-          # Clean temp directory to prevent disk exhaustion
-          lxc exec test-container -- sh -c 'rm -rf /tmp/* /tmp/.* 2>/dev/null || true'
+          # Ensure permissions, fakechroot for mmdebstrap, and clean temp directory
+          lxc exec test-container -- chmod 755 /home/ubuntu
+          lxc exec test-container -- apt-get install -y fakechroot fakeroot 2>/dev/null || true
+          lxc exec test-container -- sh -c 'find /tmp -mindepth 1 -delete 2>/dev/null || true'
 
           # Sync latest code into container
           tar -cf - . | lxc exec test-container -- tar -xf - -C /home/ubuntu/craft-parts
